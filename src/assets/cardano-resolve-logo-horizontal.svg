@@ -1,0 +1,18 @@
+<svg width="280" height="60" viewBox="0 0 280 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Blue rounded square background -->
+  <rect x="4" y="4" width="52" height="52" rx="12" fill="#2563eb"/>
+  
+  <!-- Yellow link/chain icon -->
+  <g transform="translate(16, 16)">
+    <!-- First link of chain -->
+    <ellipse cx="10" cy="10" rx="6" ry="8" fill="none" stroke="#facc15" stroke-width="2.5" stroke-linecap="round" transform="rotate(-45 10 10)"/>
+    
+    <!-- Second link of chain -->
+    <ellipse cx="18" cy="18" rx="6" ry="8" fill="none" stroke="#facc15" stroke-width="2.5" stroke-linecap="round" transform="rotate(-45 18 18)"/>
+  </g>
+  
+  <!-- CardanoResolve text -->
+  <text x="68" y="38" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="600">
+    <tspan fill="#1e3a8a">Cardano</tspan><tspan fill="#f59e0b">Resolve</tspan>
+  </text>
+</svg>

@@ -1,0 +1,19 @@
+<svg width="300" height="80" viewBox="0 0 300 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Blue rounded square background -->
+  <rect x="8" y="8" width="64" height="64" rx="16" fill="#2563eb"/>
+  
+  <!-- Yellow link/chain icon -->
+  <g transform="translate(24, 24)">
+    <!-- First link -->
+    <path d="M12 16C12 12.6863 14.6863 10 18 10H22C25.3137 10 28 12.6863 28 16V20C28 23.3137 25.3137 26 22 26H18C14.6863 26 12 23.3137 12 20V16Z" 
+          fill="none" stroke="#facc15" stroke-width="3" stroke-linecap="round"/>
+    
+    <!-- Second link -->
+    <path d="M4 24C4 20.6863 6.68629 18 10 18H14C17.3137 18 20 20.6863 20 24V28C20 31.3137 17.3137 34 14 34H10C6.68629 34 4 31.3137 4 28V24Z" 
+          fill="none" stroke="#facc15" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  
+  <!-- CardanoResolve text -->
+  <text x="88" y="32" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="600" fill="#1e3a8a">Cardano</text>
+  <text x="88" y="56" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="600" fill="#f59e0b">Resolve</text>
+</svg>
