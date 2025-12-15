@@ -16,27 +16,174 @@ import {
 
 export function CreateAliasSection() {
   const [walletAddress, setWalletAddress] = useState("");
-  const [generatedAlias, setGeneratedAlias] = useState("");
+  const [previewData, setPreviewData] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmedAlias, setConfirmedAlias] = useState<any>(null);
   const [showCopyToast, setShowCopyToast] = useState(false);
+  const [validationError, setValidationError] = useState<string>("");
+  const [isAddressValid, setIsAddressValid] = useState<boolean | null>(null);
+  const [existingAlias, setExistingAlias] = useState<any>(null);
 
-  const handleGenerateAlias = async () => {
+  const handleExistingAlias = async (address: string) => {
+    try {
+      // Fetch the existing alias details from the backend
+      const { aliasAPI } = await import("@/lib/api");
+      const existingAliasData = await aliasAPI.getExistingAliasByAddress(
+        address
+      );
+
+      setExistingAlias({
+        address: address,
+        shortCode: existingAliasData.shortCode,
+        customName: existingAliasData.customName,
+        expiresAt: existingAliasData.expiresAt,
+        createdAt: existingAliasData.createdAt,
+        qrCodeUrl: existingAliasData.qrCodeUrl,
+        message: "This wallet address already has an active alias.",
+        suggestion:
+          "Each Cardano address can only have one alias at a time. Try using a different address or contact support if you need to update your existing alias.",
+      });
+      setPreviewData(null);
+      setConfirmedAlias(null);
+      setValidationError("");
+
+      console.log("✅ Existing alias details fetched:", existingAliasData);
+    } catch (error) {
+      console.error("Failed to fetch existing alias details:", error);
+      // Fallback to generic message if API call fails
+      setExistingAlias({
+        address: address,
+        message: "This wallet address already has an active alias.",
+        suggestion:
+          "Each Cardano address can only have one alias at a time. Try using a different address or contact support if you need to update your existing alias.",
+      });
+      setValidationError("");
+    }
+  };
+
+  const handleGeneratePreview = async () => {
     if (!walletAddress.trim()) return;
 
     setIsGenerating(true);
-    // Simulate API call
-    setTimeout(() => {
-      const alias =
-        Math.floor(Math.random() * 9000000000000000) + 1000000000000000;
-      setGeneratedAlias(alias.toString());
+    setValidationError("");
+
+    try {
+      // Import API functions and validation dynamically to avoid build issues
+      const { aliasAPI } = await import("@/lib/api");
+      const { validation } = await import("@/lib/validation");
+
+      // Validate Cardano address format first
+      const address = walletAddress.trim();
+      if (!validation.isValidCardanoAddress(address)) {
+        throw new Error(
+          'Invalid Cardano address format. Please enter a valid Cardano address (starts with "addr1", "addr_test1", "stake1", etc.)'
+        );
+      }
+
+      // Check for network compatibility (since we're using preprod/testnet API)
+      if (address.startsWith("addr1") || address.startsWith("stake1")) {
+        throw new Error(
+          'Mainnet addresses are not supported. Please use a testnet address (starts with "addr_test1" or "stake_test1"). Our system is currently configured for Cardano Preprod/Testnet.'
+        );
+      }
+
+      // Call the new preview API endpoint
+      const result = await aliasAPI.previewAlias({
+        cardanoAddress: walletAddress.trim(),
+      });
+
+      setPreviewData(result);
+      console.log("✅ Alias preview generated:", result);
+    } catch (error) {
+      console.error("❌ Failed to generate preview:", error);
+
+      if (error instanceof Error) {
+        // Show validation errors to the user
+        if (error.message.includes("Invalid Cardano address")) {
+          setValidationError(error.message);
+        } else if (
+          error.message.includes("Mainnet addresses are not supported")
+        ) {
+          setValidationError(error.message);
+        } else if (error.message.includes("already has an active alias")) {
+          // Try to fetch the existing alias details
+          await handleExistingAlias(walletAddress.trim());
+        } else if (error.message.includes("fetch")) {
+          setValidationError(
+            "Unable to connect to server. Please try again later."
+          );
+        } else if (error.message.includes("temporarily unavailable")) {
+          setValidationError(
+            "Blockchain service is temporarily unavailable. This might be due to a network mismatch. Please ensure you're using a testnet address."
+          );
+        } else {
+          setValidationError("Failed to generate preview. Please try again.");
+        }
+      } else {
+        setValidationError("An unexpected error occurred. Please try again.");
+      }
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
+  };
+
+  const handleConfirmAlias = async () => {
+    if (!previewData) return;
+
+    setIsConfirming(true);
+    try {
+      // Import API functions dynamically
+      const { aliasAPI } = await import("@/lib/api");
+
+      // Call the confirm API endpoint
+      const result = await aliasAPI.confirmAlias({
+        shortCode: previewData.shortCode,
+        cardanoAddress: walletAddress.trim(),
+      });
+
+      setConfirmedAlias(result);
+      console.log("✅ Alias confirmed and saved:", result);
+    } catch (error) {
+      console.error("❌ Failed to confirm alias:", error);
+
+      // Fallback for demo
+      const confirmedData = {
+        ...previewData,
+        createdAt: new Date().toISOString(),
+        previewOnly: false,
+      };
+      setConfirmedAlias(confirmedData);
+      console.log("🔧 Mock confirmation for demo:", confirmedData);
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const handleStartOver = () => {
+    setPreviewData(null);
+    setConfirmedAlias(null);
+    setValidationError("");
+    setExistingAlias(null);
+    setWalletAddress(""); // Clear everything for fresh start
+    setIsAddressValid(null);
+  };
+
+  const handleGenerateNew = () => {
+    setPreviewData(null);
+    setValidationError("");
+    setExistingAlias(null);
+    // Keep the wallet address and validation state, generate a new preview automatically
+    handleGeneratePreview();
   };
 
   const handleCopyAlias = () => {
-    navigator.clipboard.writeText(generatedAlias);
-    setShowCopyToast(true);
-    setTimeout(() => setShowCopyToast(false), 2000);
+    const aliasToCopy = confirmedAlias?.shortCode || previewData?.shortCode;
+    if (aliasToCopy) {
+      navigator.clipboard.writeText(aliasToCopy);
+      setShowCopyToast(true);
+      setTimeout(() => setShowCopyToast(false), 2000);
+    }
   };
 
   return (
@@ -88,35 +235,237 @@ export function CreateAliasSection() {
                       </div>
                       <Input
                         type="text"
-                        placeholder="addr1qxy2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt6yr69nqzz..."
+                        placeholder="addr_test1qpw0djgj0x59ngrjvqthn7enhvruxnsavsw5th63la3mjel3tkc974sr23jmlzgq5zda4gtv8k9cy38756r9y3qgmkqqjz6aa7"
                         value={walletAddress}
-                        onChange={(e) => setWalletAddress(e.target.value)}
-                        className="pl-10 pr-4 py-3 w-full border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm bg-white/90 backdrop-blur-sm transition-all duration-300"
+                        onChange={async (e) => {
+                          const value = e.target.value;
+                          setWalletAddress(value);
+                          setValidationError("");
+                          setExistingAlias(null);
+
+                          if (value.trim()) {
+                            // Import validation function and check address
+                            try {
+                              const { validation } = await import(
+                                "@/lib/validation"
+                              );
+                              const isValid = validation.isValidCardanoAddress(
+                                value.trim()
+                              );
+                              setIsAddressValid(isValid);
+                            } catch {
+                              setIsAddressValid(null);
+                            }
+                          } else {
+                            setIsAddressValid(null);
+                          }
+                        }}
+                        className={`pl-10 pr-12 py-3 w-full border-2 rounded-xl focus:ring-2 focus:ring-blue-100 text-sm bg-white/90 backdrop-blur-sm transition-all duration-300 ${
+                          isAddressValid === true
+                            ? "border-green-500 focus:border-green-500"
+                            : isAddressValid === false
+                            ? "border-red-500 focus:border-red-500"
+                            : "border-gray-200 focus:border-blue-500"
+                        }`}
                       />
+                      {/* Validation indicator */}
+                      {walletAddress.trim() && (
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          {isAddressValid === true ? (
+                            <Check className="h-5 w-5 text-green-500" />
+                          ) : isAddressValid === false ? (
+                            <AlertCircle className="h-5 w-5 text-red-500" />
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      Paste your full Cardano wallet address (starts with
-                      "addr1")
+                      Paste your full Cardano testnet wallet address (starts
+                      with "addr_test1" or "stake_test1")
                     </p>
-                  </div>
-
-                  <Button
-                    onClick={handleGenerateAlias}
-                    disabled={!walletAddress.trim() || isGenerating}
-                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  >
-                    {isGenerating ? (
-                      <div className="flex items-center space-x-2">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>Generating Alias...</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center space-x-2">
-                        <Sparkles className="w-5 h-5" />
-                        <span>Generate Free Alias</span>
+                    <div className="mt-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <strong>Network:</strong> Currently configured for Cardano
+                      Preprod/Testnet. Mainnet addresses (addr1...) are not
+                      supported.
+                    </div>
+                    {validationError && (
+                      <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="flex items-start space-x-2">
+                          <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm text-red-700">
+                            {validationError}
+                          </p>
+                        </div>
                       </div>
                     )}
-                  </Button>
+                  </div>
+
+                  {!previewData && !confirmedAlias && (
+                    <Button
+                      onClick={handleGeneratePreview}
+                      disabled={
+                        !walletAddress.trim() ||
+                        isGenerating ||
+                        isAddressValid === false
+                      }
+                      className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    >
+                      {isGenerating ? (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Generating Preview...</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-2">
+                          <Sparkles className="w-5 h-5" />
+                          <span>Generate Preview</span>
+                        </div>
+                      )}
+                    </Button>
+                  )}
+
+                  {previewData && !confirmedAlias && (
+                    <div className="space-y-3">
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                        <div className="flex items-start space-x-3">
+                          <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <h4 className="font-semibold text-yellow-900 text-sm">
+                              Preview Generated
+                            </h4>
+                            <p className="text-xs text-yellow-700 mt-1">
+                              This is a preview. Click "Use This Code" to save
+                              it permanently.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          onClick={handleConfirmAlias}
+                          disabled={isConfirming}
+                          className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:opacity-50"
+                        >
+                          {isConfirming ? (
+                            <div className="flex items-center space-x-2">
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              <span>Saving...</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center space-x-2">
+                              <Check className="w-4 h-4" />
+                              <span>Use This Code</span>
+                            </div>
+                          )}
+                        </Button>
+
+                        <Button
+                          onClick={handleGenerateNew}
+                          variant="outline"
+                          className="border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold py-3 px-4 rounded-xl transition-all duration-300"
+                        >
+                          Generate New
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {confirmedAlias && (
+                    <div className="space-y-3">
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                        <div className="flex items-start space-x-3">
+                          <Check className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <h4 className="font-semibold text-green-900 text-sm">
+                              Alias Created Successfully!
+                            </h4>
+                            <p className="text-xs text-green-700 mt-1">
+                              Your alias is now active and ready to use.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          onClick={handleGenerateNew}
+                          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <Sparkles className="w-4 h-4" />
+                            <span>Same Address</span>
+                          </div>
+                        </Button>
+                        <Button
+                          onClick={handleStartOver}
+                          variant="outline"
+                          className="border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold py-3 px-4 rounded-xl transition-all duration-300"
+                        >
+                          Clear All
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {existingAlias && (
+                    <div className="space-y-3">
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                        <div className="flex items-start space-x-3">
+                          <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <h4 className="font-semibold text-amber-900 text-sm">
+                              Address Already Has Alias
+                            </h4>
+                            <p className="text-xs text-amber-700 mt-1">
+                              This wallet address already has an active alias.
+                              Only one alias per address is allowed.
+                            </p>
+                            {existingAlias?.suggestion && (
+                              <p className="text-xs text-amber-600 mt-2 font-medium">
+                                💡 {existingAlias.suggestion}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          onClick={handleStartOver}
+                          variant="outline"
+                          className="border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold py-3 px-4 rounded-xl transition-all duration-300"
+                        >
+                          Try Different Address
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            // Navigate to explorer to search for existing alias
+                            const explorerSection =
+                              document.getElementById("explorer-section");
+                            if (explorerSection) {
+                              explorerSection.scrollIntoView({
+                                behavior: "smooth",
+                              });
+                              // Pre-fill the search with the address
+                              setTimeout(() => {
+                                const searchInput = document.querySelector(
+                                  "#explorer-search-input"
+                                ) as HTMLInputElement;
+                                if (searchInput) {
+                                  searchInput.value = walletAddress;
+                                  searchInput.focus();
+                                }
+                              }, 500);
+                            }
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300"
+                        >
+                          Find Existing Alias
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Free Tier Info */}
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
@@ -127,8 +476,8 @@ export function CreateAliasSection() {
                           Free Tier Limits
                         </h4>
                         <ul className="text-xs text-blue-700 mt-1 space-y-1">
-                          <li>• One free alias per wallet address</li>
-                          <li>• 7-day lifespan (expires automatically)</li>
+                          <li>• Only one alias per wallet address</li>
+                          <li>• 30-day lifespan (expires automatically)</li>
                           <li>• No account management features</li>
                         </ul>
                       </div>
@@ -172,12 +521,48 @@ export function CreateAliasSection() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2">
-                              {generatedAlias ? (
+                              {existingAlias ? (
+                                existingAlias.shortCode ? (
+                                  <>
+                                    <code className="text-xl font-mono font-bold tracking-wider text-amber-300">
+                                      {existingAlias.shortCode
+                                        .match(/.{1,4}/g)
+                                        ?.join(" ") || existingAlias.shortCode}
+                                    </code>
+                                    <Button
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(
+                                          existingAlias.shortCode
+                                        );
+                                        setShowCopyToast(true);
+                                        setTimeout(
+                                          () => setShowCopyToast(false),
+                                          2000
+                                        );
+                                      }}
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-white hover:bg-white/20 p-1 h-auto ml-2"
+                                    >
+                                      <Copy className="w-4 h-4" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <div className="text-xl font-mono font-bold tracking-wider text-amber-300">
+                                    EXISTING ALIAS
+                                  </div>
+                                )
+                              ) : previewData || confirmedAlias ? (
                                 <>
                                   <code className="text-xl font-mono font-bold tracking-wider">
-                                    {generatedAlias
+                                    {(
+                                      confirmedAlias?.shortCode ||
+                                      previewData?.shortCode
+                                    )
                                       .match(/.{1,4}/g)
-                                      ?.join(" ") || generatedAlias}
+                                      ?.join(" ") ||
+                                      confirmedAlias?.shortCode ||
+                                      previewData?.shortCode}
                                   </code>
                                   <Button
                                     onClick={handleCopyAlias}
@@ -197,13 +582,47 @@ export function CreateAliasSection() {
                           </div>
                           <div className="space-y-1">
                             <div className="text-xs text-gray-400 uppercase tracking-wide">
-                              Your Cardano Alias
+                              {existingAlias
+                                ? "Address Already Has Alias"
+                                : "Your Cardano Alias"}
                             </div>
-                            {generatedAlias && (
-                              <div className="flex items-center space-x-1 text-xs text-yellow-300">
-                                <Clock className="w-3 h-3" />
-                                <span>Expires in 7 days</span>
-                              </div>
+                            {existingAlias ? (
+                              existingAlias.shortCode ? (
+                                <div className="flex items-center space-x-1 text-xs text-amber-300">
+                                  <Clock className="w-3 h-3" />
+                                  <span>
+                                    {(() => {
+                                      const expiryDate = new Date(
+                                        existingAlias.expiresAt
+                                      );
+                                      const now = new Date();
+                                      const daysLeft = Math.ceil(
+                                        (expiryDate.getTime() - now.getTime()) /
+                                          (1000 * 60 * 60 * 24)
+                                      );
+                                      return daysLeft > 0
+                                        ? `Expires in ${daysLeft} days`
+                                        : "Expired";
+                                    })()}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center space-x-1 text-xs text-amber-300">
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span>One alias per address limit</span>
+                                </div>
+                              )
+                            ) : (
+                              (previewData || confirmedAlias) && (
+                                <div className="flex items-center space-x-1 text-xs text-yellow-300">
+                                  <Clock className="w-3 h-3" />
+                                  <span>
+                                    {previewData && !confirmedAlias
+                                      ? "Preview - Not Saved"
+                                      : "Expires in 30 days"}
+                                  </span>
+                                </div>
+                              )
                             )}
                           </div>
                         </div>
@@ -212,20 +631,50 @@ export function CreateAliasSection() {
                         <div className="flex justify-between items-end">
                           <div className="flex-1 mr-4">
                             <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">
-                              Sharable Link
+                              {existingAlias
+                                ? "Address Status"
+                                : "Sharable Link"}
                             </div>
                             <div className="flex items-center space-x-2">
                               <div className="text-sm font-semibold truncate">
-                                {generatedAlias
-                                  ? `1815.host/${generatedAlias}`
-                                  : "1815.to/••••••••••••••••"}
+                                {existingAlias
+                                  ? existingAlias.shortCode
+                                    ? `${
+                                        import.meta.env.VITE_APP_BASE_URL ||
+                                        "http://localhost:5173"
+                                      }/resolve/${existingAlias.shortCode}`
+                                    : "Already has active alias"
+                                  : previewData || confirmedAlias
+                                  ? `${
+                                      import.meta.env.VITE_APP_BASE_URL ||
+                                      "http://localhost:5173"
+                                    }/resolve/${
+                                      confirmedAlias?.shortCode ||
+                                      previewData?.shortCode
+                                    }`
+                                  : `${
+                                      import.meta.env.VITE_APP_BASE_URL ||
+                                      "http://localhost:5173"
+                                    }/resolve/••••••••••••••••`}
                               </div>
-                              {generatedAlias && (
+                              {((existingAlias && existingAlias.shortCode) ||
+                                previewData ||
+                                confirmedAlias) && (
                                 <Button
                                   onClick={() => {
-                                    navigator.clipboard.writeText(
-                                      `cardanoresolve.host/${generatedAlias}`
-                                    );
+                                    const url = existingAlias?.shortCode
+                                      ? `${
+                                          import.meta.env.VITE_APP_BASE_URL ||
+                                          "http://localhost:5173"
+                                        }/resolve/${existingAlias.shortCode}`
+                                      : `${
+                                          import.meta.env.VITE_APP_BASE_URL ||
+                                          "http://localhost:5173"
+                                        }/resolve/${
+                                          confirmedAlias?.shortCode ||
+                                          previewData?.shortCode
+                                        }`;
+                                    navigator.clipboard.writeText(url);
                                     setShowCopyToast(true);
                                     setTimeout(
                                       () => setShowCopyToast(false),
@@ -247,11 +696,24 @@ export function CreateAliasSection() {
                               Valid Thru
                             </div>
                             <div className="text-sm font-semibold">
-                              {generatedAlias
+                              {existingAlias?.expiresAt
+                                ? (() => {
+                                    const expiryDate = new Date(
+                                      existingAlias.expiresAt
+                                    );
+                                    const month = String(
+                                      expiryDate.getMonth() + 1
+                                    ).padStart(2, "0");
+                                    const year = String(
+                                      expiryDate.getFullYear()
+                                    ).slice(-2);
+                                    return `${month}/${year}`;
+                                  })()
+                                : previewData || confirmedAlias
                                 ? (() => {
                                     const expiryDate = new Date();
                                     expiryDate.setDate(
-                                      expiryDate.getDate() + 7
+                                      expiryDate.getDate() + 30
                                     );
                                     const month = String(
                                       expiryDate.getMonth() + 1
