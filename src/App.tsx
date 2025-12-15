@@ -5,20 +5,27 @@ import { ExplorerSection } from "./components/ExplorerSection";
 // import { ShortenSection } from "./components/ShortenSection";
 import { FeaturesSection } from "./components/FeaturesSection";
 import { Footer } from "./components/Footer";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function App() {
   return (
-    <div className="min-h-screen bg-white">
-      <Header />
-      <main>
-        <HeroSection />
-        <CreateAliasSection />
-        <ExplorerSection />
-        {/* <ShortenSection /> */}
-        <FeaturesSection />
-      </main>
-      <Footer />
-    </div>
+    <ErrorBoundary>
+      <div className="min-h-screen bg-white">
+        <Header />
+        <main>
+          <HeroSection />
+          <ErrorBoundary>
+            <CreateAliasSection />
+          </ErrorBoundary>
+          <ErrorBoundary>
+            <ExplorerSection />
+          </ErrorBoundary>
+          {/* <ShortenSection /> */}
+          <FeaturesSection />
+        </main>
+        <Footer />
+      </div>
+    </ErrorBoundary>
   );
 }
 
