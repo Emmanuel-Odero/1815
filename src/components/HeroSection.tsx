@@ -9,7 +9,11 @@ import {
   ArrowRight,
   User,
   X,
+  AlertCircle,
+  CheckCircle,
+  Copy,
 } from "lucide-react";
+import { aliasAPI, validation } from "@/lib/api";
 
 type FeatureType = "secure" | "instant" | "simple" | null;
 
@@ -76,6 +80,10 @@ const featureContents: Record<Exclude<FeatureType, null>, FeatureContent> = {
 
 export function HeroSection() {
   const [selectedFeature, setSelectedFeature] = useState<FeatureType>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [resolveResult, setResolveResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFeatureClick = (feature: FeatureType) => {
     setSelectedFeature(feature);
@@ -83,6 +91,64 @@ export function HeroSection() {
 
   const handleClose = () => {
     setSelectedFeature(null);
+  };
+
+  const handleResolve = async () => {
+    if (!searchQuery.trim()) {
+      setError("Please enter an alias or wallet address");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setResolveResult(null);
+
+    try {
+      const query = searchQuery.trim();
+
+      // Check if it's a valid short code (16 digits)
+      if (validation.isValidShortCode(query)) {
+        // Resolve alias to address
+        const result = await aliasAPI.resolveAlias(query);
+        setResolveResult({
+          type: "alias",
+          alias: query,
+          address: result.cardanoAddress,
+          customName: result.customName,
+          expiresAt: result.expiresAt,
+        });
+      } else if (validation.isValidCardanoAddress(query)) {
+        // Show the address (could be enhanced to show balance/transactions)
+        setResolveResult({
+          type: "address",
+          address: query,
+        });
+      } else {
+        setError(
+          "Invalid input. Please enter a 16-digit alias or valid Cardano address."
+        );
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to resolve. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleResolve();
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const handleExampleClick = (example: string) => {
+    setSearchQuery(example);
+    setError(null);
+    setResolveResult(null);
   };
 
   const renderDefaultContent = () => (
@@ -121,7 +187,7 @@ export function HeroSection() {
       </p>
 
       {/* Search Card */}
-      <div className="bg-red-550px backdrop-blur-lg rounded-2xl shadow-xl p-6 max-w-2xl mx-auto border border-white/20 hover:shadow-2xl transition-all duration-500 w-[600px]">
+      <div className="bg-white/70 backdrop-blur-lg rounded-2xl shadow-xl p-6 max-w-2xl mx-auto border border-white/20 hover:shadow-2xl transition-all duration-500 w-[600px]">
         <div className="flex flex-col lg:flex-row items-center space-y-3 lg:space-y-0 lg:space-x-3 mb-3">
           <div className="flex-1 relative w-full">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -130,14 +196,90 @@ export function HeroSection() {
             <Input
               type="text"
               placeholder="Enter alias or wallet address..."
-              className="pl-4 pr-4 py-4 w-full border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-base font-medium bg-white/90 backdrop-blur-sm transition-all duration-300"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="pl-12 pr-4 py-4 w-full border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-base font-medium bg-white/90 backdrop-blur-sm transition-all duration-300"
+              disabled={isLoading}
             />
           </div>
-          <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-4 rounded-xl font-semibold text-base flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 w-full lg:w-auto">
-            <Search className="h-5 w-5" />
-            <span>Resolve</span>
+          <Button
+            onClick={handleResolve}
+            disabled={isLoading}
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-4 rounded-xl font-semibold text-base flex items-center space-x-2 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 w-full lg:w-auto disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          >
+            <Search className={`h-5 w-5 ${isLoading ? "animate-spin" : ""}`} />
+            <span>{isLoading ? "Resolving..." : "Resolve"}</span>
           </Button>
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
+            <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+            <span className="text-red-700 text-sm">{error}</span>
+          </div>
+        )}
+
+        {/* Result Display */}
+        {resolveResult && (
+          <div className="mb-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center space-x-2 mb-2">
+              <CheckCircle className="h-4 w-4 text-green-500" />
+              <span className="text-green-700 font-semibold text-sm">
+                {resolveResult.type === "alias"
+                  ? "Alias Resolved!"
+                  : "Valid Address"}
+              </span>
+            </div>
+
+            {resolveResult.type === "alias" && (
+              <>
+                {resolveResult.customName && (
+                  <div className="mb-2">
+                    <span className="text-xs text-gray-600">Name: </span>
+                    <span className="text-sm font-medium text-gray-800">
+                      {resolveResult.customName}
+                    </span>
+                  </div>
+                )}
+                <div className="mb-2">
+                  <span className="text-xs text-gray-600">Alias: </span>
+                  <span className="text-sm font-mono text-blue-600">
+                    {resolveResult.alias}
+                  </span>
+                </div>
+              </>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-gray-600">Address: </span>
+              <span className="text-xs font-mono text-gray-800 break-all flex-1">
+                {resolveResult.address.substring(0, 20)}...
+                {resolveResult.address.substring(
+                  resolveResult.address.length - 10
+                )}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => copyToClipboard(resolveResult.address)}
+                className="h-6 w-6 p-0"
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+
+            {resolveResult.expiresAt && (
+              <div className="mt-2">
+                <span className="text-xs text-gray-600">Expires: </span>
+                <span className="text-xs text-gray-800">
+                  {new Date(resolveResult.expiresAt).toLocaleDateString()}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
           <span className="text-gray-600 font-medium flex items-center">
@@ -145,18 +287,28 @@ export function HeroSection() {
             Try:
           </span>
           <div className="flex flex-wrap gap-2">
-            <a
-              href="#"
+            <button
+              onClick={() => handleExampleClick("4520562482001749")}
               className="bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-mono text-xs font-semibold transition-colors"
             >
-              1234567890123456
-            </a>
-            <a
-              href="#"
+              4520562482001749
+            </button>
+            <button
+              onClick={() => handleExampleClick("8503442288002043")}
+              className="bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200 font-mono text-xs font-semibold transition-colors"
+            >
+              8503442288002043
+            </button>
+            <button
+              onClick={() =>
+                handleExampleClick(
+                  "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x"
+                )
+              }
               className="bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200 font-mono text-xs font-semibold transition-colors"
             >
-              9876543210987654
-            </a>
+              addr1qx2f...se35a3x
+            </button>
           </div>
         </div>
       </div>
