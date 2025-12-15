@@ -26,6 +26,7 @@ export function ExplorerSection() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string>("");
   const [searchType, setSearchType] = useState<
     "auto" | "wallet" | "transaction" | "alias"
   >("auto");
@@ -34,183 +35,298 @@ export function ExplorerSection() {
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
+    setSearchError("");
+    setSearchResult(null);
 
-    // Simulate API call with different result types
-    setTimeout(() => {
-      // Determine search type based on input format
-      let resultType: "wallet" | "transaction" | "alias";
+    try {
+      console.log("🔍 Starting search process...");
+      console.log("🔍 Search query:", searchQuery.trim());
 
-      if (searchQuery.length === 16 && /^\d+$/.test(searchQuery)) {
-        resultType = "alias";
-      } else if (searchQuery.length === 64) {
-        resultType = "transaction";
-      } else {
-        resultType = "wallet";
+      // Import API functions and validation dynamically to avoid build issues
+      const { explorerAPI, aliasAPI } = await import("@/lib/api");
+      const { validation } = await import("@/lib/validation");
+      console.log("✅ API and validation modules imported successfully");
+
+      const query = searchQuery.trim();
+
+      // Fast client-side validation first (no API calls)
+      let queryType = searchType;
+      if (queryType === "auto") {
+        console.log("🔍 Performing client-side validation...");
+
+        if (validation.isValidShortCode(query)) {
+          queryType = "alias";
+          console.log("✅ Detected as alias (16-digit code)");
+        } else if (validation.isValidTransactionHash(query)) {
+          queryType = "transaction";
+          console.log("✅ Detected as transaction hash");
+        } else if (validation.isValidCardanoAddress(query)) {
+          queryType = "address";
+          console.log("✅ Detected as valid Cardano address");
+        } else if (validation.isLikelyCardanoAddress(query)) {
+          // Might be a Cardano address but failed strict validation
+          console.log(
+            "⚠️ Looks like Cardano address but failed validation - trying API anyway"
+          );
+          queryType = "address";
+        } else {
+          // Invalid format - don't make API call
+          console.log("❌ Invalid format detected");
+          throw new Error(
+            `Invalid format: "${query}" doesn't match any supported format (Cardano address, transaction hash, or 16-digit alias)`
+          );
+        }
       }
 
-      // Mock data based on type
-      const mockResults = {
-        wallet: {
-          address: searchQuery,
-          balance: "1,234.56 ADA",
-          totalTransactions: 156,
-          firstSeen: "2023-01-15",
-          lastActivity: "2024-12-13",
-          transactions: [
-            {
-              hash: "a1b2c3d4e5f6...",
-              type: "received",
-              amount: "+50.00 ADA",
-              time: "2 hours ago",
-            },
-            {
-              hash: "f6e5d4c3b2a1...",
-              type: "sent",
-              amount: "-25.50 ADA",
-              time: "1 day ago",
-            },
-            {
-              hash: "9z8y7x6w5v4u...",
-              type: "received",
-              amount: "+100.00 ADA",
-              time: "3 days ago",
-            },
-          ],
-        },
-        transaction: {
-          hash: searchQuery,
-          status: "Confirmed",
-          block: 8234567,
-          timestamp: "2024-12-13 14:30:25 UTC",
-          fee: "0.17 ADA",
-          inputs: [
-            {
-              address:
-                "addr1qxy2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer...",
-              amount: "100.00 ADA",
-            },
-          ],
-          outputs: [
-            {
-              address: "addr1q9f8r7e6w5q4t3y2u1i0o9p8l7k6j5h4g3f2d1s0a9z8x...",
-              amount: "75.50 ADA",
-            },
-            {
-              address:
-                "addr1qxy2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer...",
-              amount: "24.33 ADA",
-            },
-          ],
-        },
-        alias: {
-          alias: searchQuery,
-          resolvedAddress:
-            "addr1qxy2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt6yr69nqzz",
-          balance: "2,456.78 ADA",
-          totalTransactions: 89,
-          createdDate: "2024-11-20",
-          expiryDate: "2024-11-27",
-        },
-      };
+      console.log("🔍 Searching with backend API:", {
+        query: query,
+        type: queryType,
+      });
+
+      // Handle alias search using the explorer API (which includes real blockchain data)
+      if (queryType === "alias") {
+        console.log("🔍 Searching alias via explorer API:", query);
+
+        try {
+          // Use the explorer API which now returns consistent data for aliases
+          const result = await explorerAPI.search({
+            query: query,
+            type: queryType,
+          });
+
+          console.log("✅ Alias search completed successfully:", result);
+
+          // Handle the response format from the explorer API
+          if (result.type === "alias" && result.data) {
+            setSearchResult({
+              type: "alias",
+              data: {
+                alias: result.data.alias || query,
+                resolvedAddress:
+                  result.data.resolvedAddress || result.data.address || "",
+                customName: result.data.customName || "",
+                expiresAt: result.data.expiresAt || "",
+                useCount: result.data.useCount || 0,
+                // Use real blockchain data from the API
+                balance: result.data.balance || "0 ₳",
+                totalTransactions: result.data.totalTransactions || 0,
+                createdDate: result.data.createdDate || "Unknown",
+                expiryDate: result.data.expiryDate || "Unknown",
+                // Include raw data for debugging
+                raw: result.data.raw,
+                responseTime: result.responseTime,
+                cached: result.cached,
+              },
+            });
+            return;
+          } else {
+            throw new Error("Invalid alias search response format");
+          }
+        } catch (aliasError) {
+          console.error("❌ Alias search failed:", aliasError);
+          throw aliasError;
+        }
+      }
+
+      // For other types, use the explorer API
+      const result = await explorerAPI.search({
+        query: query,
+        type: queryType,
+      });
+
+      console.log("✅ Search completed successfully:", result);
+
+      // Handle the response format from the updated API
+      let formattedData = result.data;
+      if (result.type === "address" && result.data.data) {
+        // The API now returns nested data structure
+        formattedData = {
+          address: result.data.data.address,
+          balance: result.data.data.balance || "0 ₳",
+          totalTransactions: result.data.data.totalTransactions || 0,
+          firstSeen: result.data.data.firstSeen || "Unknown",
+          lastActivity: result.data.data.lastActivity || "Unknown",
+          transactions: result.data.data.transactions || [],
+          // Include raw blockchain data for debugging
+          raw: result.data.data,
+        };
+      }
 
       setSearchResult({
-        type: resultType,
-        data: mockResults[resultType],
+        type: result.type === "address" ? "wallet" : result.type,
+        data: formattedData,
       });
+    } catch (error) {
+      console.error("❌ Search failed:", error);
+
+      // Show error message to user
+      if (error instanceof Error) {
+        if (error.message.includes("not found")) {
+          setSearchError(
+            `No results found for "${searchQuery}". Please check your input and try again.`
+          );
+        } else if (error.message.includes("expired")) {
+          setSearchError(
+            `Alias "${searchQuery}" has expired and is no longer valid.`
+          );
+        } else if (error.message.includes("inactive")) {
+          setSearchError(`Alias "${searchQuery}" is inactive.`);
+        } else if (error.message.includes("fetch")) {
+          setSearchError(
+            "Unable to connect to server. Please check your connection and try again."
+          );
+        } else if (error.message.includes("temporarily unavailable")) {
+          setSearchError(
+            "Blockchain service is temporarily unavailable. This might be due to a network mismatch (mainnet address on testnet API) or service issues. Please try again later."
+          );
+        } else {
+          setSearchError(`Search failed: ${error.message}`);
+        }
+      } else {
+        setSearchError("An unexpected error occurred. Please try again.");
+      }
+    } finally {
       setIsSearching(false);
-    }, 1500);
+    }
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
 
-  const renderWalletResult = (data: any) => (
-    <Card className="bg-white/90 backdrop-blur-lg border border-gray-200 rounded-2xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <Wallet className="w-5 h-5 text-blue-600" />
-          <h3 className="font-bold text-gray-900">Wallet Details</h3>
-        </div>
-        <Button
-          onClick={() => copyToClipboard(data.address)}
-          size="sm"
-          variant="outline"
-          className="flex items-center space-x-1"
-        >
-          <Copy className="w-4 h-4" />
-          <span>Copy</span>
-        </Button>
-      </div>
+  const renderWalletResult = (data: any) => {
+    // Ensure data exists and has required properties
+    if (!data) {
+      return (
+        <Card className="bg-red-50 border border-red-200 rounded-2xl p-6">
+          <div className="text-red-700">Error: No wallet data available</div>
+        </Card>
+      );
+    }
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-blue-50 rounded-xl p-4">
-          <div className="flex items-center space-x-2 mb-2">
-            <Coins className="w-4 h-4 text-blue-600" />
-            <span className="text-sm font-semibold text-blue-900">Balance</span>
+    // Handle case where address is provided but other data might be missing
+    const address = data.address || searchQuery;
+    const balance = data.balance || "Loading...";
+    const totalTransactions = data.totalTransactions || "0";
+    const firstSeen = data.firstSeen || "Unknown";
+    const lastActivity = data.lastActivity || "Unknown";
+    const transactions = data.transactions || [];
+
+    return (
+      <Card className="bg-white/90 backdrop-blur-lg border border-gray-200 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <Wallet className="w-5 h-5 text-blue-600" />
+            <h3 className="font-bold text-gray-900">Wallet Details</h3>
           </div>
-          <div className="text-2xl font-bold text-blue-600">{data.balance}</div>
+          <Button
+            onClick={() => copyToClipboard(address)}
+            size="sm"
+            variant="outline"
+            className="flex items-center space-x-1"
+          >
+            <Copy className="w-4 h-4" />
+            <span>Copy</span>
+          </Button>
         </div>
 
-        <div className="bg-green-50 rounded-xl p-4">
-          <div className="flex items-center space-x-2 mb-2">
-            <Activity className="w-4 h-4 text-green-600" />
-            <span className="text-sm font-semibold text-green-900">
-              Transactions
-            </span>
-          </div>
-          <div className="text-2xl font-bold text-green-600">
-            {data.totalTransactions}
-          </div>
-        </div>
-      </div>
-      <div className="space-y-3">
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">First Seen:</span>
-          <span className="font-medium">{data.firstSeen}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Last Activity:</span>
-          <span className="font-medium">{data.lastActivity}</span>
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <h4 className="font-semibold text-gray-900 mb-3">
-          Recent Transactions
-        </h4>
-        <div className="space-y-2">
-          {data.transactions.map((tx: any, index: number) => (
-            <div
-              key={index}
-              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-            >
-              <div className="flex items-center space-x-3">
-                {tx.type === "received" ? (
-                  <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                ) : (
-                  <ArrowUpRight className="w-4 h-4 text-red-600" />
-                )}
-                <div>
-                  <div className="font-mono text-sm text-gray-600">
-                    {tx.hash}
-                  </div>
-                  <div className="text-xs text-gray-500">{tx.time}</div>
-                </div>
-              </div>
-              <div
-                className={`font-semibold ${
-                  tx.type === "received" ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                {tx.amount}
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-blue-50 rounded-xl p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Coins className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-semibold text-blue-900">
+                Balance
+              </span>
             </div>
-          ))}
+            <div className="text-2xl font-bold text-blue-600">{balance}</div>
+          </div>
+
+          <div className="bg-green-50 rounded-xl p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Activity className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-semibold text-green-900">
+                Transactions
+              </span>
+            </div>
+            <div className="text-2xl font-bold text-green-600">
+              {totalTransactions}
+            </div>
+          </div>
         </div>
-      </div>
-    </Card>
-  );
+        <div className="space-y-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">First Seen:</span>
+            <span className="font-medium">{firstSeen}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Last Activity:</span>
+            <span className="font-medium">{lastActivity}</span>
+          </div>
+        </div>
+
+        {/* Show success message for real blockchain data */}
+        {data.raw && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span className="text-sm font-medium text-green-800">
+                ✅ Real blockchain data loaded from Cardano network
+              </span>
+            </div>
+            <div className="text-xs text-green-600 mt-1">
+              Data source: Blockfrost API • Network:{" "}
+              {data.raw.type || "Cardano"} • Response time:{" "}
+              {data.responseTime || "N/A"}ms
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6">
+          <h4 className="font-semibold text-gray-900 mb-3">
+            Recent Transactions
+          </h4>
+          <div className="space-y-2">
+            {transactions.length > 0 ? (
+              transactions.map((tx: any, index: number) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="flex items-center space-x-3">
+                    {tx.type === "received" ? (
+                      <ArrowDownLeft className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <ArrowUpRight className="w-4 h-4 text-red-600" />
+                    )}
+                    <div>
+                      <div className="font-mono text-sm text-gray-600">
+                        {tx.hash}
+                      </div>
+                      <div className="text-xs text-gray-500">{tx.time}</div>
+                    </div>
+                  </div>
+                  <div
+                    className={`font-semibold ${
+                      tx.type === "received" ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {tx.amount}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-4 text-gray-500">
+                <p>No recent transactions available</p>
+                <p className="text-sm mt-1">
+                  Transaction history would be loaded from the blockchain
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    );
+  };
 
   const renderTransactionResult = (data: any) => (
     <Card className="bg-white/90 backdrop-blur-lg border border-gray-200 rounded-2xl p-6">
@@ -301,82 +417,123 @@ export function ExplorerSection() {
     </Card>
   );
 
-  const renderAliasResult = (data: any) => (
-    <Card className="bg-white/90 backdrop-blur-lg border border-gray-200 rounded-2xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <TrendingUp className="w-5 h-5 text-amber-600" />
-          <h3 className="font-bold text-gray-900">Alias Details</h3>
-        </div>
-        <Button
-          onClick={() => copyToClipboard(data.resolvedAddress)}
-          size="sm"
-          variant="outline"
-          className="flex items-center space-x-1"
-        >
-          <Copy className="w-4 h-4" />
-          <span>Copy Address</span>
-        </Button>
-      </div>
+  const renderAliasResult = (data: any) => {
+    // Ensure data exists and has required properties
+    if (!data) {
+      return (
+        <Card className="bg-red-50 border border-red-200 rounded-2xl p-6">
+          <div className="text-red-700">Error: No alias data available</div>
+        </Card>
+      );
+    }
 
-      <div className="bg-amber-50 rounded-xl p-4 mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-semibold text-amber-900 mb-1">
-              Alias
-            </div>
-            <div className="text-2xl font-bold text-amber-600 font-mono">
-              {data.alias}
-            </div>
+    return (
+      <Card className="bg-white/90 backdrop-blur-lg border border-gray-200 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="w-5 h-5 text-amber-600" />
+            <h3 className="font-bold text-gray-900">Alias Details</h3>
           </div>
-          <div className="text-right">
-            <div className="text-sm font-semibold text-amber-900 mb-1">
-              Resolves To
-            </div>
-            <div className="font-mono text-sm text-gray-600">
-              {data.resolvedAddress.substring(0, 20)}...
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-blue-50 rounded-xl p-4">
-          <div className="flex items-center space-x-2 mb-2">
-            <Coins className="w-4 h-4 text-blue-600" />
-            <span className="text-sm font-semibold text-blue-900">Balance</span>
-          </div>
-          <div className="text-2xl font-bold text-blue-600">{data.balance}</div>
+          <Button
+            onClick={() => copyToClipboard(data.resolvedAddress)}
+            size="sm"
+            variant="outline"
+            className="flex items-center space-x-1"
+          >
+            <Copy className="w-4 h-4" />
+            <span>Copy Address</span>
+          </Button>
         </div>
 
-        <div className="bg-green-50 rounded-xl p-4">
-          <div className="flex items-center space-x-2 mb-2">
-            <Activity className="w-4 h-4 text-green-600" />
-            <span className="text-sm font-semibold text-green-900">
-              Transactions
+        <div className="bg-amber-50 rounded-xl p-4 mb-6">
+          <div className="space-y-4">
+            <div>
+              <div className="text-sm font-semibold text-amber-900 mb-1">
+                Alias Code
+              </div>
+              <div className="text-2xl font-bold text-amber-600 font-mono">
+                {data.alias}
+              </div>
+              {data.customName && (
+                <div className="text-sm text-amber-700 mt-1">
+                  "{data.customName}"
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-amber-900 mb-2">
+                Resolves To Full Address
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-amber-200">
+                <div className="font-mono text-sm text-gray-800 break-all">
+                  {data.resolvedAddress}
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-xs text-gray-500">
+                    Full Cardano Address
+                  </span>
+                  <Button
+                    onClick={() => copyToClipboard(data.resolvedAddress)}
+                    size="sm"
+                    variant="outline"
+                    className="text-xs px-2 py-1 h-auto"
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy Full Address
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-blue-50 rounded-xl p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Coins className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-semibold text-blue-900">
+                Balance
+              </span>
+            </div>
+            <div className="text-2xl font-bold text-blue-600">
+              {data.balance || "Loading..."}
+            </div>
+          </div>
+
+          <div className="bg-green-50 rounded-xl p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Activity className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-semibold text-green-900">
+                Transactions
+              </span>
+            </div>
+            <div className="text-2xl font-bold text-green-600">
+              {data.totalTransactions || "0"}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Created:</span>
+            <span className="font-medium">{data.createdDate || "Unknown"}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Expires:</span>
+            <span className="font-medium text-red-600">
+              {data.expiryDate || "Unknown"}
             </span>
           </div>
-          <div className="text-2xl font-bold text-green-600">
-            {data.totalTransactions}
-          </div>
         </div>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Created:</span>
-          <span className="font-medium">{data.createdDate}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Expires:</span>
-          <span className="font-medium text-red-600">{data.expiryDate}</span>
-        </div>
-      </div>
-    </Card>
-  );
+      </Card>
+    );
+  };
 
   return (
-    <section className="relative w-full bg-gradient-to-br from-gray-50 via-white to-blue-50 py-16">
+    <section
+      id="explorer-section"
+      className="relative w-full bg-gradient-to-br from-gray-50 via-white to-blue-50 py-16"
+    >
       <div className="max-w-6xl mx-auto px-6">
         {/* Section Header */}
         <div className="text-center mb-12">
@@ -399,6 +556,11 @@ export function ExplorerSection() {
               Powered by CardanoResolve
             </span>
           </p>
+          <div className="mt-3 text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 max-w-2xl mx-auto">
+            <strong>Network:</strong> Currently connected to Cardano
+            Preprod/Testnet. Use testnet addresses (addr_test1...) for best
+            results.
+          </div>
         </div>
 
         {/* Search Section */}
@@ -436,6 +598,7 @@ export function ExplorerSection() {
                   <Search className="h-5 w-5 text-purple-400" />
                 </div>
                 <Input
+                  id="explorer-search-input"
                   type="text"
                   placeholder="Enter transaction ID, wallet address, or alias..."
                   value={searchQuery}
@@ -466,34 +629,88 @@ export function ExplorerSection() {
             <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
               <span className="text-gray-600 font-medium">Try:</span>
               <button
-                onClick={() => setSearchQuery("1234567890123456")}
+                onClick={() => setSearchQuery("6273358125001101")}
                 className="bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200 font-mono text-xs font-semibold transition-colors"
               >
-                1234567890123456
+                6273358125001101 (alias)
               </button>
               <button
                 onClick={() =>
                   setSearchQuery(
-                    "addr1qxy2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer..."
+                    "addr_test1qpw0djgj0x59ngrjvqthn7enhvruxnsavsw5th63la3mjel3tkc974sr23jmlzgq5zda4gtv8k9cy38756r9y3qgmkqqjz6aa7"
                   )
                 }
                 className="bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-mono text-xs font-semibold transition-colors"
               >
-                addr1qxy2fx...
+                Testnet Address (Working)
               </button>
               <button
                 onClick={() =>
                   setSearchQuery(
-                    "a1b2c3d4e5f6789012345678901234567890123456789012345678901234"
+                    "addr1q9kfhmm42unymnq7hfzp96fg7jf3uth7pddms9857fnxadmmq5rhllaj069nwmswdu8rj82nrc2my9mnmggk4a2wnh8qc0jhlr"
                   )
                 }
+                className="bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200 font-mono text-xs font-semibold transition-colors"
+              >
+                Mainnet Address (Wrong Network)
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    console.log("🧪 Testing blockchain API call...");
+                    const response = await fetch(
+                      "http://localhost:3000/api/v1/explorer/search?query=addr_test1qpw0djgj0x59ngrjvqthn7enhvruxnsavsw5th63la3mjel3tkc974sr23jmlzgq5zda4gtv8k9cy38756r9y3qgmkqqjz6aa7"
+                    );
+                    const data = await response.json();
+                    console.log("✅ Blockchain API test result:", data);
+                    if (data.success && data.data.data.balance) {
+                      alert(
+                        `✅ Blockchain API working! Balance: ${data.data.data.balance}`
+                      );
+                    } else {
+                      alert(
+                        "❌ Blockchain API test failed! Check console for details."
+                      );
+                    }
+                  } catch (error) {
+                    console.error("❌ Blockchain API test failed:", error);
+                    alert(
+                      "❌ Blockchain API test failed! Check console for details."
+                    );
+                  }
+                }}
                 className="bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200 font-mono text-xs font-semibold transition-colors"
               >
-                a1b2c3d4e5f6...
+                Test Blockchain API
               </button>
             </div>
           </div>
         </Card>
+
+        {/* Error Display */}
+        {searchError && (
+          <Card className="bg-red-50 border border-red-200 rounded-2xl p-6 mb-8">
+            <div className="flex items-start space-x-3">
+              <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Search className="w-4 h-4 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-red-900 mb-1">
+                  Search Failed
+                </h3>
+                <p className="text-red-700">{searchError}</p>
+                <Button
+                  onClick={() => setSearchError("")}
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 border-red-300 text-red-700 hover:bg-red-100"
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Search Results */}
         {searchResult && (
