@@ -659,7 +659,7 @@ export function ExplorerSection() {
                   try {
                     console.log("🧪 Testing blockchain API call...");
                     const response = await fetch(
-                      "http://localhost:3000/api/v1/explorer/search?query=addr_test1qpw0djgj0x59ngrjvqthn7enhvruxnsavsw5th63la3mjel3tkc974sr23jmlzgq5zda4gtv8k9cy38756r9y3qgmkqqjz6aa7"
+                      "/api/v1/explorer/search?query=addr_test1qpw0djgj0x59ngrjvqthn7enhvruxnsavsw5th63la3mjel3tkc974sr23jmlzgq5zda4gtv8k9cy38756r9y3qgmkqqjz6aa7"
                     );
                     const data = await response.json();
                     console.log("✅ Blockchain API test result:", data);
