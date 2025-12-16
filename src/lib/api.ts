@@ -387,9 +387,14 @@ export const healthAPI = {
 
 // Error handling utilities
 export class APIError extends Error {
-  constructor(message: string, public code?: string, public details?: any) {
+  public code?: string;
+  public details?: any;
+
+  constructor(message: string, code?: string, details?: any) {
     super(message);
     this.name = "APIError";
+    this.code = code;
+    this.details = details;
   }
 }
 
