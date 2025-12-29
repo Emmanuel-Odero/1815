@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { API_BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 interface VerificationResult {
@@ -30,9 +31,9 @@ export function VerificationPage() {
       try {
         console.log(
           "VerificationPage: Making request to:",
-          `/api/v1/features/verify/${token}`
+          `${API_BASE_URL}/features/verify/${token}`
         );
-        const response = await fetch(`/api/v1/features/verify/${token}`);
+        const response = await fetch(`${API_BASE_URL}/features/verify/${token}`);
         const data = await response.json();
 
         console.log("VerificationPage: Response status:", response.status);

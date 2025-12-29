@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { API_BASE_URL } from "@/lib/api";
 
 interface Feature {
   id: string;
@@ -48,7 +49,7 @@ export function FeaturesSection() {
   useEffect(() => {
     const loadFeatures = async () => {
       try {
-        const response = await fetch("/api/v1/features");
+        const response = await fetch(`${API_BASE_URL}/features`);
         if (response.ok) {
           const data = await response.json();
           setFeaturesData(data.data);
@@ -71,7 +72,7 @@ export function FeaturesSection() {
     setSubscriptionStatus((prev) => ({ ...prev, newsletter: "loading" }));
 
     try {
-      const response = await fetch("/api/v1/features/newsletter/subscribe", {
+      const response = await fetch(`${API_BASE_URL}/features/newsletter/subscribe`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -133,7 +134,7 @@ export function FeaturesSection() {
     setSubscriptionStatus((prev) => ({ ...prev, [featureId]: "loading" }));
 
     try {
-      const response = await fetch("/api/v1/features/notify", {
+      const response = await fetch(`${API_BASE_URL}/features/notify`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

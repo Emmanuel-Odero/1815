@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { API_BASE_URL } from "@/lib/api";
 
 export function DebugVerification() {
   const [token, setToken] = useState("");
@@ -14,8 +15,8 @@ export function DebugVerification() {
     setResult(null);
 
     try {
-      console.log("Making request to:", `/api/v1/features/verify/${token}`);
-      const response = await fetch(`/api/v1/features/verify/${token}`);
+      console.log("Making request to:", `${API_BASE_URL}/features/verify/${token}`);
+      const response = await fetch(`${API_BASE_URL}/features/verify/${token}`);
       const data = await response.json();
 
       console.log("Response status:", response.status);
