@@ -641,7 +641,7 @@ export function CreateAliasSection() {
                                   ? existingAlias.shortCode
                                     ? `${
                                         import.meta.env.VITE_APP_BASE_URL ||
-                                        "http://localhost:5174"
+                                        "http://localhost:5173"
                                       }/resolve/${existingAlias.shortCode}`
                                     : "Already has active alias"
                                   : previewData || confirmedAlias

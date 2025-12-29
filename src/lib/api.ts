@@ -1,6 +1,9 @@
 // API configuration and utility functions for connecting to the 1815-api backend
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+const rawBase = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+export const API_BASE_URL = rawBase.endsWith("/api/v1")
+  ? rawBase.replace(/\/+$/, "")
+  : rawBase.replace(/\/+$/, "") + "/api/v1";
 
 // API response types
 interface APIResponse<T = any> {
@@ -387,9 +390,14 @@ export const healthAPI = {
 
 // Error handling utilities
 export class APIError extends Error {
-  constructor(message: string, public code?: string, public details?: any) {
+  public code?: string;
+  public details?: any;
+
+  constructor(message: string, code?: string, details?: any) {
     super(message);
     this.name = "APIError";
+    this.code = code;
+    this.details = details;
   }
 }
 

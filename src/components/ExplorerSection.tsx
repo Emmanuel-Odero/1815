@@ -10,7 +10,6 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Copy,
-  ExternalLink,
   Activity,
   Coins,
   Eye,
@@ -19,7 +18,13 @@ import {
 
 interface SearchResult {
   type: "wallet" | "transaction" | "alias";
-  data: any;
+  data: {
+    [key: string]: any;
+    raw?: any;
+    responseTime?: number;
+  };
+  responseTime?: number;
+  cached?: boolean;
 }
 
 export function ExplorerSection() {
@@ -43,7 +48,7 @@ export function ExplorerSection() {
       console.log("🔍 Search query:", searchQuery.trim());
 
       // Import API functions and validation dynamically to avoid build issues
-      const { explorerAPI, aliasAPI } = await import("@/lib/api");
+      const { explorerAPI } = await import("@/lib/api");
       const { validation } = await import("@/lib/validation");
       console.log("✅ API and validation modules imported successfully");
 
@@ -61,14 +66,14 @@ export function ExplorerSection() {
           queryType = "transaction";
           console.log("✅ Detected as transaction hash");
         } else if (validation.isValidCardanoAddress(query)) {
-          queryType = "address";
+          queryType = "wallet";
           console.log("✅ Detected as valid Cardano address");
         } else if (validation.isLikelyCardanoAddress(query)) {
           // Might be a Cardano address but failed strict validation
           console.log(
             "⚠️ Looks like Cardano address but failed validation - trying API anyway"
           );
-          queryType = "address";
+          queryType = "wallet";
         } else {
           // Invalid format - don't make API call
           console.log("❌ Invalid format detected");
@@ -98,25 +103,26 @@ export function ExplorerSection() {
 
           // Handle the response format from the explorer API
           if (result.type === "alias" && result.data) {
+            const aliasData = result.data as any;
             setSearchResult({
               type: "alias",
               data: {
-                alias: result.data.alias || query,
+                alias: aliasData.alias || query,
                 resolvedAddress:
-                  result.data.resolvedAddress || result.data.address || "",
-                customName: result.data.customName || "",
-                expiresAt: result.data.expiresAt || "",
-                useCount: result.data.useCount || 0,
+                  aliasData.resolvedAddress || aliasData.address || "",
+                customName: aliasData.customName || "",
+                expiresAt: aliasData.expiresAt || "",
+                useCount: aliasData.useCount || 0,
                 // Use real blockchain data from the API
-                balance: result.data.balance || "0 ₳",
-                totalTransactions: result.data.totalTransactions || 0,
-                createdDate: result.data.createdDate || "Unknown",
-                expiryDate: result.data.expiryDate || "Unknown",
+                balance: aliasData.balance || "0 ₳",
+                totalTransactions: aliasData.totalTransactions || 0,
+                createdDate: aliasData.createdDate || "Unknown",
+                expiryDate: aliasData.expiryDate || "Unknown",
                 // Include raw data for debugging
-                raw: result.data.raw,
-                responseTime: result.responseTime,
-                cached: result.cached,
+                raw: aliasData.raw,
               },
+              responseTime: (result as any).responseTime,
+              cached: (result as any).cached,
             });
             return;
           } else {
@@ -129,32 +135,46 @@ export function ExplorerSection() {
       }
 
       // For other types, use the explorer API
+      const apiType = queryType === "wallet" ? "address" : queryType;
       const result = await explorerAPI.search({
         query: query,
-        type: queryType,
+        type: apiType as "auto" | "address" | "transaction" | "block" | "alias",
       });
 
       console.log("✅ Search completed successfully:", result);
 
       // Handle the response format from the updated API
-      let formattedData = result.data;
-      if (result.type === "address" && result.data.data) {
+      let formattedData: any = result.data;
+      const resultData = result.data as any;
+
+      if (result.type === "address" && resultData.data) {
         // The API now returns nested data structure
         formattedData = {
-          address: result.data.data.address,
-          balance: result.data.data.balance || "0 ₳",
-          totalTransactions: result.data.data.totalTransactions || 0,
-          firstSeen: result.data.data.firstSeen || "Unknown",
-          lastActivity: result.data.data.lastActivity || "Unknown",
-          transactions: result.data.data.transactions || [],
+          address: resultData.data.address,
+          balance: resultData.data.balance || "0 ₳",
+          totalTransactions: resultData.data.totalTransactions || 0,
+          firstSeen: resultData.data.firstSeen || "Unknown",
+          lastActivity: resultData.data.lastActivity || "Unknown",
+          transactions: resultData.data.transactions || [],
           // Include raw blockchain data for debugging
-          raw: result.data.data,
+          raw: resultData.data,
         };
       }
 
+      const searchResultType =
+        result.type === "address"
+          ? "wallet"
+          : result.type === "transaction"
+          ? "transaction"
+          : result.type === "alias"
+          ? "alias"
+          : "wallet";
+
       setSearchResult({
-        type: result.type === "address" ? "wallet" : result.type,
+        type: searchResultType as "wallet" | "transaction" | "alias",
         data: formattedData,
+        responseTime: (result as any).responseTime,
+        cached: (result as any).cached,
       });
     } catch (error) {
       console.error("❌ Search failed:", error);
